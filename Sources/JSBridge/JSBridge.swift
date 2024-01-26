@@ -333,7 +333,13 @@ public extension JSExportObject {
 // MARK: - Private Methods
 
 private func __loadJS__() -> String {
-    guard let path = Bundle.module.path(forResource: "bridge", ofType: "js", inDirectory: "Resources"),
+    #if COCOAPODS
+    let bundle = Bundle.main
+    #else
+    let bundle = Bundle.module
+    #endif
+    
+    guard let path = bundle.path(forResource: "bridge", ofType: "js"),
           let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
         return ""
     }
