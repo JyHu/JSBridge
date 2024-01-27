@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = "JSBridge"
-  s.version      = "0.1.0"
+  s.version      = "0.0.1"
   s.summary      = "A framework for simplifying communication between JavaScript and native Swift."
   s.description  = <<-DESC
   JSBridge is a universal framework designed to simplify communication between JavaScript and client-side (OC, Swift). The framework provides powerful bidirectional communication mechanisms, supporting features like asynchronous calls, callback handling, and log management.
