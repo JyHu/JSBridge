@@ -13,13 +13,8 @@ class TestableBridge: JSExportObject {
     }
     
     var showLogCallback: ((JSExportObject.LogLevel, Any?) -> Void)?
-    var distributeCallback: ((JSExportObject.Message) -> Void)?
     
     override func showLog(_ level: JSExportObject.LogLevel, _ message: Any?) {
         showLogCallback?(level, message)
-    }
-    
-    override func distribute(message: JSExportObject.Message) {
-        distributeCallback?(message)
     }
 }

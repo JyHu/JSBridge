@@ -35,7 +35,7 @@ const JSBridge = (function () {
             }
             
             // 这行代码使用了 ES6 对象字面量简写语法，等效于：
-            //    Fella.reply({
+            //    Fella.call({
             //      name: name,
             //      params: params,
             //      taskID: lastTaskID
@@ -47,7 +47,7 @@ const JSBridge = (function () {
             }
 
             // 将消息发送到客户端。
-            JSConnecter.reply(arguments);
+            JSConnecter.call(arguments);
 
             // 自增消息 ID。
             lastTaskID++;

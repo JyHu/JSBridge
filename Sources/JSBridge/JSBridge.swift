@@ -10,18 +10,35 @@ import JavaScriptCore
 
 /// 定义供 JavaScript 调用的协议
 @objc private protocol JSExportDelegate: JSExport {
-    /// JavaScript 调用的方法，用于将消息发送到本地
-    func reply(_ message: Any?)
+    /// JavaScript 调用 `call: function (name, params, watch, callback)` 时会在
+    /// bridge内部调用的方法，用于将消息发送到swift
+    /// message为数据字典，包含如下字段：
+    ///     name: 协议名称
+    ///     params: 参数
+    ///     watch: 是否监听事件
+    ///       0: 仅用于通知，不会缓存回调信息
+    ///       1: 仅需要接收一次消息，接收后立即移除对应缓存
+    ///       2: 需要接收多次消息，需要主动取消订阅
+    func call(_ message: Any?)
     
     /// 和asyncCall匹配使用的javascript方法，用于将结果从javascript中回传到native
+    /// 比如swift侧调用了asyncCall，那么在JS中会调用到对应的方法中，在该方法内执行一定时间
+    /// 获得结果后，可以通过asyncReply将结果传回swift，swift侧会查找requests缓存，并从中
+    /// 找到对应的请求，然后根据请求内缓存的block来回传数据
+    /// 
+    /// message必须为字典类型，且必须包含taskID字段，该字段是在调用asyncCall时传入的，用来
+    /// 查找唯一对应的请求，然后结果用"result"作为key返回
     func asyncReply(_ message: Any?)
     
     /// 用于调试目的的 JavaScript 调用的方法
     func showLog(_ level: Int, _ message: Any?)
+    
+    /// 延时执行某个方法
+    func asyncAfter(_ seconds: NSNumber, _ callback: JSValue?)
 }
 
 /// 本地与 JavaScript 交互的中间对象
-public class JSExportObject {
+open class JSExportObject {
     
     /// JS端输出日志的等级
     public enum LogLevel: Int {
@@ -129,7 +146,14 @@ public class JSExportObject {
         
         // MARK: 由JS发起请求，客户端异步处理
         
-        /// 回调方法，将结果发送回 JavaScript
+        /// JavaScript 调用本地发送消息的方法
+        /// - Parameter message: 发送的消息
+        func call(_ message: Any?) {
+            guard let message = Message(message: message) else { return }
+            callback?(message)
+        }
+        
+        /// native方回调方法，将call(_:)请求结果发送回 JavaScript
         /// - Parameters:
         ///   - taskID: 任务 ID
         ///   - message: 结果信息
@@ -146,13 +170,6 @@ public class JSExportObject {
         /// - Parameter taskID: 任务 ID
         func unwatch(taskID: Int) {
             call("__unwatch__", arguments: ["taskID": taskID])
-        }
-        
-        /// JavaScript 调用本地发送消息的方法
-        /// - Parameter message: 发送的消息
-        func reply(_ message: Any?) {
-            guard let message = Message(message: message) else { return }
-            callback?(message)
         }
         
         // MARK: 由客户端发起请求，JS中异步处理
@@ -205,7 +222,7 @@ public class JSExportObject {
         // MARK: 辅助操作方法
         
         /// JavaScript 调试方法
-        /// - Parameter message: 调试信息
+        /// -   Parameter message: 调试信息
         func showLog(_ level: Int, _ message: Any?) {
             self.showLogBlock?(LogLevel(rawValue: level), message)
         }
@@ -223,6 +240,13 @@ public class JSExportObject {
                 jsfunc.call(withArguments: [])
             }
         }
+        
+        func asyncAfter(_ seconds: NSNumber, _ callback: JSValue?) {
+            let delay = DispatchTime.now() + .milliseconds(Int(truncating: seconds.doubleValue * 1000 as NSNumber))
+            DispatchQueue.main.asyncAfter(deadline: delay) {
+                callback?.call(withArguments: [])
+            }
+        }
     }
     
     /// Bridge 类的实例
@@ -237,31 +261,41 @@ public class JSExportObject {
         set { bridge.logLevel = newValue }
     }
     
+    /// 回传log内容的block
+    public var showLogAction: ((LogLevel, Any?) -> Void)?
+    
+    /// 回传消息内容的block
+    public var distributeCallback: ((Message) -> Void)?
+    
     /// 初始化方法，设置回调
     public init() {
         self.javascript = __loadJS__()
         
         self.bridge.callback = { [weak self] message in
             self?.distribute(message: message)
+            self?.distributeCallback?(message)
         }
         
         self.bridge.showLogBlock = { [weak self] level, message in
             self?.showLog(level, message)
+            self?.showLogAction?(level, message)
         }
     }
     
     /// 分发消息，根据消息类型进行处理，所有子类都可以重写这个方法来管理自己的消息事件
     /// - Parameter message: JS 发送的消息
-    public func distribute(message: Message) {
+    open func distribute(message: Message) {
         if message.name == "showLog" {
             print("JSBridge \(message.name): \(String(describing: message.params))")
+        } else {
+            distributeCallback?(message)
         }
         // Handle other message types if needed
     }
     
     /// 打印日志
     /// - Parameter message: 日志信息
-    public func showLog(_ level: LogLevel, _ message: Any?) {
+    open func showLog(_ level: LogLevel, _ message: Any?) {
         guard let message else { return }
         print("JSBridge Debug Log: \(message)")
     }
@@ -276,12 +310,16 @@ public extension JSExportObject {
     /// 将 JavaScript 代码加载到 JSContext 中
     /// - Parameter javascript: JavaScript 代码
     func load(_ javascript: String) {
+        bridge.requests.removeAll()
+        
         bridge.load(javascript)
     }
     
     /// 拼接自定义的 JS 到协议内 JS
     /// - Parameter javascript: 自定义的 JavaScript 代码
     func append(_ javascript: String) {
+        bridge.requests.removeAll()
+        
         load(
         """
         \(self.javascript)
