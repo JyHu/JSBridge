@@ -17,18 +17,26 @@ final class BasicTests: XCTestCase {
         bridge.append(
         """
         function testAction(message) {
-            JSConnecter.showLog(0, JSBridge.logLevel);
+            JSBridge.showLog(0, message);
+            JSBridge.showLog(1, message);
+            JSBridge.showLog(2, message);
         }
         """
         )
         
-        bridge.showLogCallback = { level, message in
-            XCTAssertEqual(message as? Int, 1)
-            expectation.fulfill()
+        var logCount: Int = 0
+        bridge.showLogAction = { level, message in
+            logCount += 1
         }
         
         bridge.logLevel = .info
         bridge.call("testAction", arguments: "23")
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            if logCount == 2 {
+                expectation.fulfill()
+            }
+        }
         
         wait(for: [expectation], timeout: 2)
     }
@@ -45,7 +53,7 @@ final class BasicTests: XCTestCase {
             """
         )
         
-        bridge.showLogCallback = { level, message in
+        bridge.showLogAction = { level, message in
             XCTAssertEqual(message as? String, "haha")
             expectation.fulfill()
         }

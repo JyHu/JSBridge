@@ -18,16 +18,15 @@ final class Block2Tests: XCTestCase {
         bridge.append(
             """
             function testBlock(message) {
-                JSConnecter.sleep(0.5, function() {
-                    JSConnecter.showLog(0, "wake up");
+                JSBridge.asyncAfter(0.5, function() {
+                    JSBridge.showLog(0, "wake up");
                 });
-                JSConnecter.showLog(0, message);
             }
             """
         )
         
         print(formatter.string(from: Date()))
-        bridge.showLogCallback = { level, message in
+        bridge.showLogAction = { level, message in
             if message as? String == "wake up" {
                 expectation.fulfill()
                 print(formatter.string(from: Date()))

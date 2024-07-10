@@ -17,14 +17,14 @@ final class BridgeCallTests: XCTestCase {
         """
         function testAction(message) {
             JSBridge.call("nativeFunc", message, 1, function(param) {
-                JSConnecter.showLog(0, param);
+                JSBridge.showLog(0, param);
             });
         }
         """
         )
         
         var results: [String] = []
-        bridge.showLogCallback = { level, log in
+        bridge.showLogAction = { level, log in
             if let log = log as? String {
                 results.append(log)
             }
@@ -50,7 +50,7 @@ final class BridgeCallTests: XCTestCase {
         """
         function testAction(message) {
             JSBridge.call("nativeFunc", message, 1, function(param) {
-                JSConnecter.showLog(0, param);
+                JSBridge.showLog(0, param);
             });
         }
         """
@@ -65,11 +65,12 @@ final class BridgeCallTests: XCTestCase {
             expectation1.fulfill()
         }
         
-        bridge.showLogCallback = { level, log in
+        bridge.showLogAction = { level, log in
             XCTAssertEqual(log as? String, "response message")
             expectation2.fulfill()
         }
         
+        bridge.logLevel = .debug
         bridge.call("testAction", arguments: "request message")
         
         wait(for: [expectation1, expectation2], timeout: 1)
@@ -97,7 +98,7 @@ final class BridgeCallTests: XCTestCase {
         
         var results: [String] = []
         
-        bridge.showLogCallback = { level, log in
+        bridge.showLogAction = { level, log in
             if let log = log as? String {
                 results.append(log)
             }
@@ -136,7 +137,7 @@ final class BridgeCallTests: XCTestCase {
         
         var results: [String] = []
         
-        bridge.showLogCallback = { level, log in
+        bridge.showLogAction = { level, log in
             if let log = log as? String {
                 results.append(log)
             }
@@ -184,7 +185,7 @@ final class BridgeCallTests: XCTestCase {
         }
         
         var results: [String] = []
-        bridge.showLogCallback = { level, log in
+        bridge.showLogAction = { level, log in
             if let log = log as? String {
                 results.append(log)
             }
@@ -220,6 +221,7 @@ final class BridgeCallTests: XCTestCase {
         var taskIDs: [Int] = []
         
         bridge.distributeCallback = { message in
+            print(message)
             taskIDs.append(message.taskID)
         }
         
@@ -241,37 +243,42 @@ final class BridgeCallTests: XCTestCase {
         bridge.append(
         """
         function testAction(message) {
-            JSBridge.call("nativeFunc", message, 2, function(param) {
-                JSConnecter.showLog(0, param);
+            var count = 0;
+            var taskID = JSBridge.call("nativeFunc", message, 2, function(param) {
+                JSBridge.showLog(0, param);
+        
+                count += 1;
+                if (count === 2) {
+                    JSBridge.unwatch(taskID);
+                }
             });
         }
         """
         )
         
         bridge.distributeCallback = { message in
-            self.bridge.callback(taskID: message.taskID, message: "response message")
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            if message.name == "nativeFunc" {
                 self.bridge.callback(taskID: message.taskID, message: "response message")
-            }
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                self.bridge.unwatch(taskID: message.taskID)
-            }
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                self.bridge.callback(taskID: message.taskID, message: "response message")
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    self.bridge.callback(taskID: message.taskID, message: "response message")
+                }
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    self.bridge.callback(taskID: message.taskID, message: "response message")
+                }
             }
         }
         
         var results: [String] = []
         
-        bridge.showLogCallback = { level, log in
+        bridge.showLogAction = { level, log in
             if let log = log as? String {
                 results.append(log)
             }
         }
         
+        bridge.logLevel = .debug
         bridge.call("testAction", arguments: "request message")
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {

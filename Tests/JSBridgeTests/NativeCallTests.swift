@@ -16,11 +16,11 @@ final class NativeCallTests: XCTestCase {
         bridge.append(
         """
         function testAction(taskID, watch, params) {
-            JSConnecter.asyncReply({"taskID": taskID, "result": params});
+            JSBridge.reply(taskID, params);
         }
         
         function testAction2(taskID, watch, params) {
-            JSConnecter.asyncReply({"taskID": taskID, "result": params});
+            JSBridge.reply(taskID, params);
         }
         """
         )
@@ -68,16 +68,16 @@ final class NativeCallTests: XCTestCase {
         bridge.append(
         """
         function testAction(taskID, watch, params) {
-            JSConnecter.asyncReply({"taskID": taskID, "result": params});
+            JSBridge.reply(taskID, params);
         }
         
         function testTrigger(taskID) {
-            JSConnecter.asyncReply({"taskID": taskID, "result": "hello"});
+            JSBridge.reply(taskID, "Hello");
         }
         """
         )
         
-        func runTest(_ watch: JSExportObject.Watch, expectCount: Int) {
+        func runTest(_ watch: JSExportObject.Watch, expectCount: Int, expectCount2: Int) {
             let exp = expectation(description: "test")
             var results: [String] = []
             
@@ -90,21 +90,20 @@ final class NativeCallTests: XCTestCase {
             bridge.call("testTrigger", arguments: taskID)
             bridge.call("testTrigger", arguments: taskID)
             bridge.call("testTrigger", arguments: taskID)
-            bridge.remove(taskID: taskID)
             bridge.call("testTrigger", arguments: taskID)
             bridge.call("testTrigger", arguments: taskID)
             bridge.call("testTrigger", arguments: taskID)
             
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                XCTAssertEqual(results, Array(repeating: "hello", count: expectCount))
+                XCTAssertEqual(results, Array(repeating: "hello", count: expectCount) + Array(repeating: "Hello", count: expectCount2))
                 exp.fulfill()
             }
             
             wait(for: [exp], timeout: 1)
         }
         
-        runTest(.notify, expectCount: 0)
-        runTest(.oncetime, expectCount: 1)
-        runTest(.monitor, expectCount: 4)
+        runTest(.notify, expectCount: 0, expectCount2: 0)
+        runTest(.oncetime, expectCount: 1, expectCount2: 0)
+        runTest(.monitor, expectCount: 1, expectCount2: 6)
     }
 }

@@ -17,7 +17,11 @@ const JSBridge = (function () {
         
     // 与事件关联的所有回调对象的缓存。
     const callbackMap = {};
-
+    
+    // 用于存储由 native 端发送过来的所有消息
+    // key 为 taskID，value 为 native 传来的 message
+    const messages = {};
+    
     // 模块暴露的公共方法。
     return {
         // 由 JS 调用与客户端交互的方法。
@@ -29,69 +33,104 @@ const JSBridge = (function () {
         //   2: 需要接收多次消息，需要主动取消订阅
         // callback: 回调方法
         call: function (name, params, watch, callback) {
+            var currentTaskID = lastTaskID
+            lastTaskID ++;
+
+            // 如果 watch 不为 0，则将回调信息存储在 callbackMap 对象中
             if (watch !== 0) {
-                // 将回调信息存储在 callbackMap 对象中。
-                callbackMap[lastTaskID] = { name, watch, callback };
+                callbackMap[currentTaskID] = { name, watch, callback };
             }
             
-            // 这行代码使用了 ES6 对象字面量简写语法，等效于：
-            //    Fella.call({
-            //      name: name,
-            //      params: params,
-            //      taskID: lastTaskID
-            //    });
-            const arguments = { name, watch, taskID: lastTaskID };
+            // 构建发送给客户端的消息对象
+            const args = { name, watch, taskID: currentTaskID };
 
+            // 如果 params 不为 null，则将其添加到消息对象中
             if (params !== null) {
-                arguments['params'] = params;
+                args['params'] = params;
             }
 
-            // 将消息发送到客户端。
-            JSConnecter.call(arguments);
+            // 将消息发送到客户端
+            JSConnecter.call(args);
 
-            // 自增消息 ID。
-            lastTaskID++;
+            // 自增消息 ID
+            return currentTaskID
         },
+        
         // 由客户端调用通知 JS 的方法。
         // message: 消息
         //   - taskID: 任务 ID，在缓存中查找对应的回调缓存信息
         //   - result: 客户端处理的结果信息
         onReceive: function (message) {
+            // 解构 message 对象，获取 taskID 和 result
             const { taskID, result } = message;
+
+            // 检查 taskID 是否有效
             if (taskID !== undefined && typeof taskID === "number" && taskID >= 0) {
+                // 从 callbackMap 中获取对应的回调信息
                 const callback = callbackMap[taskID];
                                 
+                // 如果回调信息存在
                 if (callback !== undefined) {
-                    // 移除一次性监听的回调信息。
+                    // 如果是一次性监听的回调信息，移除对应的缓存
                     if (callback.watch === 1) {
                         delete callbackMap[taskID];
                     }
 
-                    // 调用回调方法。
+                    // 调用回调方法，并将结果传递给它
                     callback.callback(result);
                 }
             }
         },
 
-        // 由客户端主动取消订阅的协议信息。
+        // 由 JS 业务方主动取消订阅的方法。
         // message: 消息
-        //   - id: 任务 ID
-        unwatch: function (message) {
-            const { taskID } = message;
-
+        //   - taskID: 任务 ID
+        unwatch: function (taskID) {
+            // 检查 taskID 是否有效
             if (taskID !== undefined) {
-                // 删除订阅信息。
+                // 删除 callbackMap 中对应的订阅信息
                 delete callbackMap[taskID];
+                
+                // 通知客户端取消订阅
+                JSConnecter.unwatchJSRequestWith(taskID);
             }
         },
         
-        // JS内部根据消息等级输出日志信息
+        // JS 内部根据消息等级输出日志信息
         // lv: 消息等级
         // log: 输出的日志内容
-        log: function (lv, log) {
-            if (lv >= this.logLevel) {
+        showLog: function (lv, log) {
+            // 如果消息等级大于等于当前设置的日志等级，输出日志
+            if (lv >= logLevel) {
                 JSConnecter.showLog(lv, log);
             }
+        },
+        
+        // js 中回传 asyncCall 的数据的时候，由 bridge 方回传出去
+        reply: function (taskID, resultMessage) {
+            // 从 messages 中找到缓存的消息
+            const message = messages[taskID];
+            
+            // 如果消息存在且为一次性监听，移除缓存
+            if (message !== undefined && message.watch == 1) {
+                delete messages[taskID];
+            }
+            
+            // 调用客户端的 asyncReply 方法，将结果传递给客户端
+            JSConnecter.asyncReply({ taskID, result: resultMessage });
+        },
+        
+        asyncAfter: function (seconds, callback) {
+            JSConnecter.asyncAfter(seconds, callback);
+        },
+        
+        // 设置日志等级
+        setLogLevel: function (level) {
+            logLevel = level;
+        },
+        
+        cacheMessage: function (taskID, message) {
+            messages[taskID] = message;
         }
     };
 })();
@@ -99,7 +138,8 @@ const JSBridge = (function () {
 // 更新日志输出等级
 // level: 日志等级
 function __onUpdateLogLevel__(level) {
-    JSBridge.logLevel = level;
+    // 更新 JSBridge 的 logLevel 属性
+    JSBridge.setLogLevel(level);
 }
 
 // 外部（JSContext）接收到消息时调用的回调方法。
@@ -108,20 +148,12 @@ function __onUpdateLogLevel__(level) {
 //       "taskID": xxx,
 //       "result": xxx
 //   }
-function __onSyncReply__(message) {
+function __onReply__(message) {
+    // 调用 JSBridge 的 onReceive 方法处理接收到的消息
     JSBridge.onReceive(message);
 }
 
-// 外部（JSContext）主动取消订阅时调用的回调方法。
-// 消息格式必须为：
-//   {
-//       "taskID": xxx
-//   }
-function __unwatch__(message) {
-    JSBridge.unwatch(message);
-}
-
-// 外部（JSContext）发起请求，由JS中异步处理，在处理完成后异步回调给外部
+// 外部（JSContext）发起请求，由 JS 中异步处理，在处理完成后异步回调给外部
 // 消息格式必须是：
 //  {
 //      "taskID": xxx,
@@ -130,23 +162,48 @@ function __unwatch__(message) {
 //      "params": xxx
 //  }
 //
-// 然后接收事件的方法必须有除了func以外的三个参数，如：
+// 然后接收事件的方法必须有除了 func 以外的三个参数，如：
 //   function exampleFunc(taskID, watch, params) {
 //      // async operation
 //      JSConnecter.asyncReply({"taskID": taskID, "result": "result"});
 //   }
-// 在一定异步处理后，通过asyncReply将结果回调到外部
+// 在一定异步处理后，通过 asyncReply 将结果回调到外部
 function __onAsyncCall__(message) {
+    // 解构 message 对象，获取 taskID, func, watch 和 params
     const { taskID, func, watch, params } = message;
     
+    // 如果 func 或 taskID 未定义，直接返回
     if (func === undefined || taskID === undefined) {
         return;
     }
-    
+
+    // 根据 watch 类型决定是否缓存数据
+    if (watch != 0) {
+        JSBridge.cacheMessage(taskID, message);
+    }
+
     // 使用对象的属性名动态调用函数
     if (typeof this[func] === 'function') {
+        // 调用对应的函数，并传递参数
         this[func](taskID, watch, params);
     } else {
-        JSConnecter.showLog(0, "no func");
+        // 如果函数不存在，输出日志
+        JSBridge.showLog(0, "no func");
     }
+}
+
+// swift 侧取消自己的数据订阅的同时，告知一下 JS，标明 JS 侧一些轮询的处理可以停掉了
+// message: 消息对象
+//   - taskID: 任务 ID
+function __removeNativeTask__(message) {
+    // 解构 message 对象，获取 taskID
+    const { taskID } = message;
+    
+    // 如果 taskID 未定义，直接返回
+    if (taskID === undefined) {
+        return;
+    }
+    
+    // 移除 JS 中的缓存数据
+    delete JSBridge.messages[taskID];
 }
