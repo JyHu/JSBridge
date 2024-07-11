@@ -25,12 +25,12 @@ final class BasicTests: XCTestCase {
         )
         
         var logCount: Int = 0
-        bridge.showLogAction = { level, message in
+        bridge.showLogHandler = { level, message in
             logCount += 1
         }
         
         bridge.logLevel = .info
-        bridge.call("testAction", arguments: "23")
+        bridge.call("testAction", argument: "23")
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             if logCount == 2 {
@@ -53,12 +53,12 @@ final class BasicTests: XCTestCase {
             """
         )
         
-        bridge.showLogAction = { level, message in
+        bridge.showLogHandler = { level, message in
             XCTAssertEqual(message as? String, "haha")
             expectation.fulfill()
         }
         
-        bridge.call("testAction", arguments: "haha")
+        bridge.call("testAction", argument: "haha")
         wait(for: [expectation], timeout: 1)
     }
 }

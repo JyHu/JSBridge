@@ -87,12 +87,12 @@ final class NativeCallTests: XCTestCase {
                 }
             }
             
-            bridge.call("testTrigger", arguments: taskID)
-            bridge.call("testTrigger", arguments: taskID)
-            bridge.call("testTrigger", arguments: taskID)
-            bridge.call("testTrigger", arguments: taskID)
-            bridge.call("testTrigger", arguments: taskID)
-            bridge.call("testTrigger", arguments: taskID)
+            bridge.call("testTrigger", argument: taskID)
+            bridge.call("testTrigger", argument: taskID)
+            bridge.call("testTrigger", argument: taskID)
+            bridge.call("testTrigger", argument: taskID)
+            bridge.call("testTrigger", argument: taskID)
+            bridge.call("testTrigger", argument: taskID)
             
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 XCTAssertEqual(results, Array(repeating: "hello", count: expectCount) + Array(repeating: "Hello", count: expectCount2))

@@ -33,37 +33,25 @@ const JSBridge = (function () {
         //   2: 需要接收多次消息，需要主动取消订阅
         // callback: 回调方法
         call: function (name, params, watch, callback) {
-            var currentTaskID = lastTaskID
-            lastTaskID ++;
+            var currentTaskID = lastTaskID;
+            lastTaskID++;
 
             // 如果 watch 不为 0，则将回调信息存储在 callbackMap 对象中
             if (watch !== 0) {
                 callbackMap[currentTaskID] = { name, watch, callback };
             }
             
-            // 构建发送给客户端的消息对象
-            const args = { name, watch, taskID: currentTaskID };
-
-            // 如果 params 不为 null，则将其添加到消息对象中
-            if (params !== null) {
-                args['params'] = params;
-            }
-
             // 将消息发送到客户端
-            JSConnecter.call(args);
+            JSConnecter.call(currentTaskID, name, watch, params);
 
             // 自增消息 ID
-            return currentTaskID
+            return currentTaskID;
         },
         
         // 由客户端调用通知 JS 的方法。
-        // message: 消息
-        //   - taskID: 任务 ID，在缓存中查找对应的回调缓存信息
-        //   - result: 客户端处理的结果信息
-        onReceive: function (message) {
-            // 解构 message 对象，获取 taskID 和 result
-            const { taskID, result } = message;
-
+        // taskID: 任务 ID，在缓存中查找对应的回调缓存信息
+        // result: 客户端处理的结果信息
+        onReceive: function (taskID, result) {
             // 检查 taskID 是否有效
             if (taskID !== undefined && typeof taskID === "number" && taskID >= 0) {
                 // 从 callbackMap 中获取对应的回调信息
@@ -83,8 +71,7 @@ const JSBridge = (function () {
         },
 
         // 由 JS 业务方主动取消订阅的方法。
-        // message: 消息
-        //   - taskID: 任务 ID
+        // taskID: 任务 ID
         unwatch: function (taskID) {
             // 检查 taskID 是否有效
             if (taskID !== undefined) {
@@ -92,7 +79,7 @@ const JSBridge = (function () {
                 delete callbackMap[taskID];
                 
                 // 通知客户端取消订阅
-                JSConnecter.unwatchJSRequestWith(taskID);
+                JSConnecter.remove(taskID);
             }
         },
         
@@ -107,7 +94,9 @@ const JSBridge = (function () {
         },
         
         // js 中回传 asyncCall 的数据的时候，由 bridge 方回传出去
-        reply: function (taskID, resultMessage) {
+        // taskID: 任务 ID
+        // params: 回传的参数
+        reply: function (taskID, params) {
             // 从 messages 中找到缓存的消息
             const message = messages[taskID];
             
@@ -117,18 +106,25 @@ const JSBridge = (function () {
             }
             
             // 调用客户端的 asyncReply 方法，将结果传递给客户端
-            JSConnecter.asyncReply({ taskID, result: resultMessage });
+            JSConnecter.asyncReply(taskID, params);
         },
         
+        // 异步调用指定的回调方法
+        // seconds: 延迟时间（秒）
+        // callback: 回调方法
         asyncAfter: function (seconds, callback) {
             JSConnecter.asyncAfter(seconds, callback);
         },
         
         // 设置日志等级
+        // level: 日志等级
         setLogLevel: function (level) {
             logLevel = level;
         },
         
+        // 缓存消息
+        // taskID: 任务 ID
+        // message: 消息内容
         cacheMessage: function (taskID, message) {
             messages[taskID] = message;
         }
@@ -148,9 +144,9 @@ function __onUpdateLogLevel__(level) {
 //       "taskID": xxx,
 //       "result": xxx
 //   }
-function __onReply__(message) {
+function __onReply__(taskID, message) {
     // 调用 JSBridge 的 onReceive 方法处理接收到的消息
-    JSBridge.onReceive(message);
+    JSBridge.onReceive(taskID, message);
 }
 
 // 外部（JSContext）发起请求，由 JS 中异步处理，在处理完成后异步回调给外部

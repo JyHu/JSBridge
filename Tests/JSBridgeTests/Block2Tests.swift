@@ -26,7 +26,7 @@ final class Block2Tests: XCTestCase {
         )
         
         print(formatter.string(from: Date()))
-        bridge.showLogAction = { level, message in
+        bridge.showLogHandler = { level, message in
             if message as? String == "wake up" {
                 expectation.fulfill()
                 print(formatter.string(from: Date()))
@@ -34,7 +34,7 @@ final class Block2Tests: XCTestCase {
         }
         
         bridge.logLevel = .debug
-        bridge.call("testBlock", arguments: "haha")
+        bridge.call("testBlock", argument: "haha")
         
         wait(for: [expectation], timeout: 2)
     }

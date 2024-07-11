@@ -24,7 +24,7 @@ final class BridgeCallTests: XCTestCase {
         )
         
         var results: [String] = []
-        bridge.showLogAction = { level, log in
+        bridge.showLogHandler = { level, log in
             if let log = log as? String {
                 results.append(log)
             }
@@ -56,7 +56,7 @@ final class BridgeCallTests: XCTestCase {
         """
         )
         
-        bridge.distributeCallback = { message in
+        bridge.distributeHandler = { message in
             XCTAssertEqual(message.params as? String, "request message")
             XCTAssertEqual(message.name, "nativeFunc")
             
@@ -65,13 +65,13 @@ final class BridgeCallTests: XCTestCase {
             expectation1.fulfill()
         }
         
-        bridge.showLogAction = { level, log in
+        bridge.showLogHandler = { level, log in
             XCTAssertEqual(log as? String, "response message")
             expectation2.fulfill()
         }
         
         bridge.logLevel = .debug
-        bridge.call("testAction", arguments: "request message")
+        bridge.call("testAction", argument: "request message")
         
         wait(for: [expectation1, expectation2], timeout: 1)
     }
@@ -91,20 +91,20 @@ final class BridgeCallTests: XCTestCase {
         """
         )
         
-        bridge.distributeCallback = { message in
+        bridge.distributeHandler = { message in
             self.bridge.callback(taskID: message.taskID, message: "response message")
             self.bridge.callback(taskID: message.taskID, message: "response message 2")
         }
         
         var results: [String] = []
         
-        bridge.showLogAction = { level, log in
+        bridge.showLogHandler = { level, log in
             if let log = log as? String {
                 results.append(log)
             }
         }
         
-        bridge.call("testAction", arguments: "request message")
+        bridge.call("testAction", argument: "request message")
         
         /// 因为watch=1，所以在收到一次消息后就会移除callback，所以收到的数据就只会是第一个
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -130,20 +130,20 @@ final class BridgeCallTests: XCTestCase {
         """
         )
         
-        bridge.distributeCallback = { message in
+        bridge.distributeHandler = { message in
             // 调用的时候，因为没有缓存callback，那么会直接报错
             self.bridge.callback(taskID: message.taskID, message: "response message")
         }
         
         var results: [String] = []
         
-        bridge.showLogAction = { level, log in
+        bridge.showLogHandler = { level, log in
             if let log = log as? String {
                 results.append(log)
             }
         }
         
-        bridge.call("testAction", arguments: "request message")
+        bridge.call("testAction", argument: "request message")
         
         /// watch=0，所以在native中callback在js中是接受不到回调的
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -168,7 +168,7 @@ final class BridgeCallTests: XCTestCase {
         """
         )
         
-        bridge.distributeCallback = { message in
+        bridge.distributeHandler = { message in
             self.bridge.callback(taskID: message.taskID, message: "response message")
             
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -185,13 +185,13 @@ final class BridgeCallTests: XCTestCase {
         }
         
         var results: [String] = []
-        bridge.showLogAction = { level, log in
+        bridge.showLogHandler = { level, log in
             if let log = log as? String {
                 results.append(log)
             }
         }
         
-        bridge.call("testAction", arguments: "request message")
+        bridge.call("testAction", argument: "request message")
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             XCTAssertEqual(results, Array(repeating: "response message", count: 4))
@@ -220,12 +220,12 @@ final class BridgeCallTests: XCTestCase {
         
         var taskIDs: [Int] = []
         
-        bridge.distributeCallback = { message in
+        bridge.distributeHandler = { message in
             print(message)
             taskIDs.append(message.taskID)
         }
         
-        bridge.call("testAction", arguments: "request message")
+        bridge.call("testAction", argument: "request message")
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             XCTAssertEqual(taskIDs, [0, 1, 2, 3, 4, 5])
@@ -256,7 +256,7 @@ final class BridgeCallTests: XCTestCase {
         """
         )
         
-        bridge.distributeCallback = { message in
+        bridge.distributeHandler = { message in
             if message.name == "nativeFunc" {
                 self.bridge.callback(taskID: message.taskID, message: "response message")
                 
@@ -272,14 +272,14 @@ final class BridgeCallTests: XCTestCase {
         
         var results: [String] = []
         
-        bridge.showLogAction = { level, log in
+        bridge.showLogHandler = { level, log in
             if let log = log as? String {
                 results.append(log)
             }
         }
         
         bridge.logLevel = .debug
-        bridge.call("testAction", arguments: "request message")
+        bridge.call("testAction", argument: "request message")
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             XCTAssertEqual(results, Array(repeating: "response message", count: 2))
