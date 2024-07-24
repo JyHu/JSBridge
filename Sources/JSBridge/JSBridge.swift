@@ -46,7 +46,7 @@ import JavaScriptCore
 open class JSExportObject {
     
     /// JS端输出日志的等级
-    public enum LogLevel: Int {
+    public enum LogLevel: Int, CaseIterable {
         case debug = 0      /// 调试日志
         case info = 1       /// 普通日志
         case warning = 2    /// 警告信息
@@ -141,6 +141,8 @@ open class JSExportObject {
             context = JSContext()
             context?.evaluateScript(javascript)
             context?.setObject(self, forKeyedSubscript: "JSConnecter" as NSString)
+            
+            updateLogLevel()
         }
         
         /// 将日志等级同步到javascript中
@@ -215,7 +217,7 @@ open class JSExportObject {
         ///   - watch: 订阅方式，默认为 .notify
         ///   - arguments: 方法参数
         ///   - callback: 接收回调的闭包
-        func asyncCall(_ function: String, watch: JSExportObject.Watch = .notify, arguments: Any? = nil, callback: ((Any?) -> Void)? = nil) -> Int {
+        func asyncCall(_ function: String, watch: JSExportObject.Watch = .oncetime, arguments: Any? = nil, callback: ((Any?) -> Void)? = nil) -> Int {
             
             defer {
                 lastestReqID += 1
@@ -318,7 +320,7 @@ open class JSExportObject {
     private var javascript: String = ""
     
     /// 日志等级
-    var logLevel: LogLevel {
+    public var logLevel: LogLevel {
         get { bridge.logLevel }
         set { bridge.logLevel = newValue }
     }
@@ -377,17 +379,12 @@ open class JSExportObject {
     open func removeTask(_ taskID: Int) {
         
     }
-}
 
-// MARK: - Public Extensions
-
-public extension JSExportObject {
-    
     // MARK: JS资源加载方法
     
     /// 将 JavaScript 代码加载到 JSContext 中
     /// - Parameter javascript: JavaScript 代码
-    func load(_ javascript: String) {
+    open func load(_ javascript: String) {
         bridge.requests.removeAll()
         
         bridge.load(javascript)
@@ -395,7 +392,7 @@ public extension JSExportObject {
     
     /// 拼接自定义的 JS 到协议内 JS
     /// - Parameter javascript: 自定义的 JavaScript 代码
-    func append(_ javascript: String) {
+    open func append(_ javascript: String) {
         bridge.requests.removeAll()
         
         load(
@@ -411,7 +408,7 @@ public extension JSExportObject {
     /// - Parameters:
     ///   - function: JavaScript 函数名
     ///   - arguments: 函数参数
-    func call(_ function: String, argument: Any?) {
+    open func call(_ function: String, argument: Any?) {
         bridge.call(function, argument: argument)
     }
     
@@ -419,13 +416,13 @@ public extension JSExportObject {
     /// - Parameters:
     ///   - taskID: 任务 ID
     ///   - message: 结果信息
-    func callback(taskID: Int, message: Any) {
+    open func callback(taskID: Int, message: Any) {
         bridge.callback(taskID: taskID, message: message)
     }
     
     /// 本地取消订阅方法，由本地方调用
     /// - Parameter taskID: 任务 ID
-    func unwatch(taskID: Int) {
+    open func unwatch(taskID: Int) {
         bridge.unwatchNativeRequestWith(taskID: taskID)
     }
     
@@ -435,7 +432,7 @@ public extension JSExportObject {
     ///   - watch: 订阅方式，默认为 .notify
     ///   - arguments: 方法参数
     ///   - callback: 接收回调的闭包
-    @discardableResult func asyncCall(_ function: String, watch: JSExportObject.Watch = .notify, arguments: Any? = nil, callback: ((Any?) -> Void)? = nil) -> Int {
+    @discardableResult public func asyncCall(_ function: String, watch: JSExportObject.Watch = .notify, arguments: Any? = nil, callback: ((Any?) -> Void)? = nil) -> Int {
         return bridge.asyncCall(function, watch: watch, arguments: arguments, callback: callback)
     }
 }
