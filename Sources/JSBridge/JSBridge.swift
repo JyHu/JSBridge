@@ -105,15 +105,6 @@ open class JSExportObject {
         
         private var context: JSContext?
         
-        /// 将收到的JS消息传递出去
-        var distributeHandler: ((Message) -> Void)?
-        
-        /// 移除任务
-        var removeTaskHandler: ((Int) -> Void)?
-        
-        /// 将收到的JS的日志信息传递出去
-        var showLogHandler: ((LogLevel, Any?) -> Void)?
-        
         /// 日志等级
         var logLevel: LogLevel = .warning {
             didSet {
@@ -132,6 +123,16 @@ open class JSExportObject {
         /// value: Message
         var messages: [Int: Message] = [:]
         
+        /// 处理消息数据的锁
+        private var lock = NSLock()
+        /// 处理请求数据的锁
+        private var rlock = NSLock()
+        
+        /// 加载的 JavaScript 代码
+        public private(set) var loadedScript: String?
+        /// 代理对象
+        fileprivate weak var delegate: JSExportObject?
+        
         // MARK: 资源加载
         
         /// 将 JavaScript 代码加载到 JSContext 中
@@ -143,6 +144,22 @@ open class JSExportObject {
             context?.setObject(self, forKeyedSubscript: "JSConnecter" as NSString)
             
             updateLogLevel()
+            loadedScript = javascript
+            
+            lock.lock()
+            messages = [:]
+            lock.unlock()
+            
+            rlock.lock()
+            requests = [:]
+            rlock.unlock()
+        }
+        
+        /// 重置 JavaScript
+        func reset() {
+            if let loadedScript {
+                load(loadedScript)
+            }
         }
         
         /// 将日志等级同步到javascript中
@@ -162,10 +179,12 @@ open class JSExportObject {
             if let watch = Watch(rawValue: watch) {
                 let message = Message(taskID: taskID, name: name, watch: watch, params: params)
                 if watch != .notify {
+                    lock.lock()
                     messages[message.taskID] = message
+                    lock.unlock()
                 }
                 
-                distributeHandler?(message)
+                delegate?.distribute(message: message)
             }
         }
         
@@ -174,9 +193,11 @@ open class JSExportObject {
         ///   - taskID: 任务 ID
         ///   - message: 结果信息
         func callback(taskID: Int, message: Any) {
+            lock.lock()
             if messages[taskID]?.watch == .oncetime {
                 messages.removeValue(forKey: taskID)
             }
+            lock.unlock()
             
             call("__onReply__", arguments: [taskID, message])
         }
@@ -186,6 +207,7 @@ open class JSExportObject {
         ///   - taskName: 任务名称
         ///   - message: 结果信息
         func callback(taskName: String, message: Any) {
+            lock.lock()
             for (taskID, cachedMessage) in messages {
                 if cachedMessage.name == taskName {
                     let params: [String: Any] = [
@@ -200,13 +222,17 @@ open class JSExportObject {
                     }
                 }
             }
+            lock.unlock()
         }
         
         /// 移除任务
         /// - Parameter taskID: 任务 ID
         func remove(_ taskID: Int) {
+            lock.lock()
             messages.removeValue(forKey: taskID)
-            removeTaskHandler?(taskID)
+            lock.unlock()
+            
+            delegate?.removeTask(taskID)
         }
         
         // MARK: 由客户端发起请求，JS中异步处理
@@ -224,7 +250,9 @@ open class JSExportObject {
             }
             
             if watch != .notify {
+                rlock.lock()
                 requests[lastestReqID] = Request(name: function, watch: watch, callback: callback)
+                rlock.unlock()
             }
             
             var params: [String: Any] = [
@@ -247,6 +275,9 @@ open class JSExportObject {
         ///   - taskID: 任务 ID
         ///   - params: 回调的结果参数
         func asyncReply(_ taskID: Int, _ params: Any?) {
+            lock.lock()
+            defer { lock.unlock() }
+            
             // 查找请求
             guard let request = requests[taskID] else { return }
             
@@ -264,7 +295,10 @@ open class JSExportObject {
         /// 移除请求的时候需要移除本地request的缓存，同时告知JS侧取消订阅；
         /// 一般这种操作适用于Swift侧发起一次请求，但是需要JS侧长时间、多次返回数据的情况。
         func unwatchNativeRequestWith(taskID: Int) {
+            lock.lock()
             requests.removeValue(forKey: taskID)
+            lock.unlock()
+            
             call("__removeNativeTask__", argument: ["taskID": taskID])
         }
         
@@ -277,7 +311,7 @@ open class JSExportObject {
         ///   - level: 日志等级
         ///   - log: 日志内容
         func showLog(_ level: Int, _ log: Any?) {
-            self.showLogHandler?(LogLevel(rawValue: level), log)
+            delegate?.showLog(LogLevel(rawValue: level), log)
         }
         
         // MARK: 延时调用
@@ -342,21 +376,7 @@ open class JSExportObject {
     /// 初始化方法，设置回调
     public init() {
         self.javascript = __loadJS__()
-        
-        self.bridge.distributeHandler = { [weak self] message in
-            self?.distribute(message: message)
-            self?.distributeHandler?(message)
-        }
-        
-        self.bridge.showLogHandler = { [weak self] level, message in
-            self?.showLog(level, message)
-            self?.showLogHandler?(level, message)
-        }
-        
-        self.bridge.removeTaskHandler = { [weak self] taskID in
-            self?.removeTaskHandler?(taskID)
-            self?.removeTask(taskID)
-        }
+        self.bridge.delegate = self
     }
     
     /// 分发消息，根据消息类型进行处理，所有c子类都可以重写这个方法来管理自己的消息事件
@@ -365,6 +385,8 @@ open class JSExportObject {
         if message.name == "showLog" {
             print("JSBridge \(message.name): \(String(describing: message.params))")
         }
+        
+        self.distributeHandler?(message)
         // Handle other message types if needed
     }
     
@@ -372,12 +394,12 @@ open class JSExportObject {
     /// - Parameter message: 日志信息
     open func showLog(_ level: LogLevel, _ message: Any?) {
         guard let message else { return }
-        print("JSBridge Debug Log: \(message)")
+        self.showLogHandler?(level, message)
     }
     
     /// H5移除了一个任务，由子类继承重写
     open func removeTask(_ taskID: Int) {
-        
+        self.removeTask(taskID)
     }
 
     // MARK: JS资源加载方法
@@ -385,16 +407,12 @@ open class JSExportObject {
     /// 将 JavaScript 代码加载到 JSContext 中
     /// - Parameter javascript: JavaScript 代码
     open func load(_ javascript: String) {
-        bridge.requests.removeAll()
-        
         bridge.load(javascript)
     }
     
     /// 拼接自定义的 JS 到协议内 JS
     /// - Parameter javascript: 自定义的 JavaScript 代码
     open func append(_ javascript: String) {
-        bridge.requests.removeAll()
-        
         load(
         """
         \(self.javascript)
@@ -402,6 +420,10 @@ open class JSExportObject {
         \(javascript)
         """
         )
+    }
+    
+    open func reset() {
+        bridge.reset()
     }
     
     /// 调用指定 JavaScript 函数
