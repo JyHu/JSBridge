@@ -46,11 +46,13 @@ import JavaScriptCore
 open class JSExportObject {
     
     /// JS端输出日志的等级
-    public enum LogLevel: Int, CaseIterable {
+    public enum LogLevel: Int, Identifiable, CaseIterable {
         case debug = 0      /// 调试日志
         case info = 1       /// 普通日志
         case warning = 2    /// 警告信息
         case error = 3      /// 错误信息
+        
+        public var id: Int { rawValue }
         
         public init(rawValue: Int) {
             switch rawValue {
