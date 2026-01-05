@@ -401,7 +401,7 @@ open class JSExportObject {
     
     /// H5移除了一个任务，由子类继承重写
     open func removeTask(_ taskID: Int) {
-        self.removeTask(taskID)
+        self.bridge.remove(taskID)
     }
 
     // MARK: JS资源加载方法
@@ -458,6 +458,15 @@ open class JSExportObject {
     ///   - callback: 接收回调的闭包
     @discardableResult public func asyncCall(_ function: String, watch: JSExportObject.Watch = .notify, arguments: Any? = nil, callback: ((Any?) -> Void)? = nil) -> Int {
         return bridge.asyncCall(function, watch: watch, arguments: arguments, callback: callback)
+    }
+    
+    @available(macOS 10.15, *)
+    public func call(_ function: String, arguments: Any? = nil) async -> Any? {
+        await withCheckedContinuation { continuation in
+            asyncCall(function, watch: .oncetime, arguments: arguments) {
+                continuation.resume(returning: $0)
+            }
+        }
     }
 }
 
